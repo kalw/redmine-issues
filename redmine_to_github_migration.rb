@@ -12,11 +12,13 @@ authenticated_with :login => username, :token => token do
 
   class IssueMigrator
     attr_accessor :redmine_issues
+    attr_accessor :github_issues
+    attr_accessor :migration_links
     def get_issues
       offset = 0
       issues = []
       begin
-        json = RestClient.get("http://bugs.joindiaspora.com/issues", {:params => {:format => :json, :limit => 100, :offset => offset}})
+        json = RestClient.get("http://bugs.joindiaspora.com/issues", {:params => {:format => :json, :status_id => '*', :limit => 100, :offset => offset}})
         result = JSON.parse(json)
         issues << [*result["issues"]]
         offset = offset + result['limit']
@@ -42,6 +44,8 @@ authenticated_with :login => username, :token => token do
     end
 
     def migrate_issues
+      github_issues = []
+      issue_pairs = []
       redmine_issues.each do |issue|
         migrate_issue issue
       end
@@ -53,6 +57,8 @@ authenticated_with :login => username, :token => token do
       migrate_comments(github_issue, issue)
       github_issue.close! if ["Fixed", "Rejected", "Won't Fix", "Duplicate", "Obsolete"].include? issue["status"]["name"]
       print "."
+      github_issues << github_issue
+      issue_pairs << [github_issue, issue]
       github_issue
     end
 
@@ -86,10 +92,17 @@ BODY
 
     def add_labels github_issue, redmine_issue
       labels = []
-      ["tracker", "priority", "status", "category"].each do |thing|
+      if priority = redmine_issue["priority"]
+        if priority  == "Low"
+          github_issue.add_label(URI.escape("Low Priority"))
+        elsif ["High", "Urgent", "Immediate"].include?(priority)
+          github_issue.add_label(URI.escape("High Priority"))
+        end
+      end
+      ["tracker", "status", "category"].each do |thing|
         next unless redmine_issue[thing]
         value = redmine_issue[thing]["name"]
-        github_issue.add_label URI.escape(value) unless ["Normal", "New"].include?(value)
+        github_issue.add_label URI.escape(value) unless ["New"].include?(value)
       end
     end
 
@@ -112,8 +125,10 @@ COMMENT
     end
 
     def clear_issues
+      puts "Clearing issues!"
       issues.each do |i|
         i.close!
+        print '.'
       end
     end
   end
