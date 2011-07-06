@@ -5,34 +5,38 @@ require 'octopi'
 require 'ruby-debug'
 
 include Octopi
-username = "aoaisfjosdijg"
-token = "aoisfjoaijgoaijdgoiadjgioj"
+username
+token =
 
 authenticated_with :login => username, :token => token do
+  puts "Authenticated!"
 
   class IssueMigrator
     attr_accessor :redmine_issues
-    attr_accessor :github_issues
     attr_accessor :migration_links
     def get_issues
       offset = 0
       issues = []
+      puts "Getting redmine issues!"
       begin
         json = RestClient.get("http://bugs.joindiaspora.com/issues", {:params => {:format => :json, :status_id => '*', :limit => 100, :offset => offset}})
         result = JSON.parse(json)
         issues << [*result["issues"]]
         offset = offset + result['limit']
+        print '.'
       end while offset < result['total_count']
+      puts
 
       puts "Retreived redmine issue index."
       issues.flatten!
 
+      puts "Getting comments"
       issues.map! do |issue|
         get_comments(issue)
       end
       puts "Retreived comments."
 
-      self.redmine_issues = issues
+      self.redmine_issues = issues.reverse!
     end
 
     def issues
@@ -40,12 +44,11 @@ authenticated_with :login => username, :token => token do
     end
 
     def repo
-      @repo ||= Repository.find(:name => "redmine-issues-experiment", :user => "diaspora")
+      @repo ||= Repository.find(:name => "redmine-issues", :user => "diaspora")
     end
 
     def migrate_issues
-      github_issues = []
-      issue_pairs = []
+      self.issue_pairs = []
       redmine_issues.each do |issue|
         migrate_issue issue
       end
@@ -57,8 +60,7 @@ authenticated_with :login => username, :token => token do
       migrate_comments(github_issue, issue)
       github_issue.close! if ["Fixed", "Rejected", "Won't Fix", "Duplicate", "Obsolete"].include? issue["status"]["name"]
       print "."
-      github_issues << github_issue
-      issue_pairs << [github_issue, issue]
+      self.issue_pairs << [github_issue, issue]
       github_issue
     end
 
