@@ -153,6 +153,22 @@ COMMENT
         print '.'
       end
     end
+    def save_issues filename
+      full_saveable = []
+      issue_pairs.each do |pair|
+        full_saveable << {
+          :redmine => pair[1].merge(:url => "http://bugs.joindiaspora.com/issues/#{pair[1]["id"]}"),
+          :github => {
+            :url => "#{pair[0].repository.url}/issues/#{pair[0].number}",
+            :number => pair[0].number,
+            :repo_url => pair[0].repository.url
+          }
+        }
+      end
+      File.open(filename, 'w') do |f|
+        f.write(full_saveable.to_json)
+      end
+    end
   end
 
   m = IssueMigrator.new
@@ -160,6 +176,7 @@ COMMENT
 
   puts "Migrating issues to github..."
   m.migrate_issues
+  m.save_issues "migration.json"
   puts "Done migrating!"
 
   ## OPEN
