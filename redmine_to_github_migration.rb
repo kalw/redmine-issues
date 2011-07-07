@@ -13,7 +13,7 @@ authenticated_with :login => username, :token => token do
 
   class IssueMigrator
     attr_accessor :redmine_issues
-    attr_accessor :migration_links
+    attr_accessor :issue_pairs
     def get_issues
       offset = 0
       issues = []
@@ -58,7 +58,7 @@ authenticated_with :login => username, :token => token do
       github_issue = create_issue(issue)
       add_labels(github_issue, issue)
       migrate_comments(github_issue, issue)
-      github_issue.close! if ["Fixed", "Rejected", "Won't Fix", "Duplicate", "Obsolete"].include? issue["status"]["name"]
+      github_issue.close! if ["Fixed", "Rejected", "Won't Fix", "Duplicate", "Obsolete", "Implemented"].include? issue["status"]["name"]
       print "."
       self.issue_pairs << [github_issue, issue]
       github_issue
@@ -85,7 +85,7 @@ On #{DateTime.parse(redmine_issue["created_on"]).asctime}
 BODY
       begin
         Issue.open(:repo => self.repo, :params => params)
-      rescue
+      rescue Exception => e
         redmine_issue["retrying?"] = true
         retry unless redmine_issue["retrying?"]
         puts "Issue open failed for Redmine Issue #{redmine_issue["id"]}"
@@ -96,15 +96,35 @@ BODY
       labels = []
       if priority = redmine_issue["priority"]
         if priority  == "Low"
-          github_issue.add_label(URI.escape("Low Priority"))
+          add_label_to_issue(github_issue, "Low Priority")
         elsif ["High", "Urgent", "Immediate"].include?(priority)
-          github_issue.add_label(URI.escape("High Priority"))
+          add_label_to_issue(github_issue, "High Priority")
         end
       end
       ["tracker", "status", "category"].each do |thing|
         next unless redmine_issue[thing]
         value = redmine_issue[thing]["name"]
-        github_issue.add_label URI.escape(value) unless ["New"].include?(value)
+        first_try = true
+        add_label_to_issue(github_issue, value) unless ["New", "Fixed"].include?(value)
+      end
+    end
+
+    def add_label_to_issue github_issue, label
+      label = "Will Not Fix" if label == "Won't Fix"
+      first_try = true
+      begin
+        github_issue.add_label URI.escape(label)
+        print ','
+      rescue Exception => e
+        puts
+        pp e
+        puts
+        puts label
+        puts URI.escape(label)
+        if first_try
+          first_try = false
+          retry
+        end
       end
     end
 
